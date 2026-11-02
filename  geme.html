@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>NEON DRIFT</title>
+<style>
+  :root {
+    color-scheme: dark;
+    font-family: system-ui, -apple-system, sans-serif;
+    --cyan: #66fff0;
+    --pink: #ff507c;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    overflow: hidden;
+    background: #060a14;
+    color: #fff;
+    user-select: none;
+  }
+  canvas {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    touch-action: none;
+  }
+  .hud {
+    position: fixed;
+    top: max(22px, env(safe-area-inset-top));
+    left: 24px;
+    right: 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    pointer-events: none;
+  }
+  .eyebrow {
+    font-size: 10px;
+    letter-spacing: .24em;
+    color: #91a1bc;
+    font-weight: 700;
+  }
+  #score {
+    font-size: clamp(32px, 6vw, 54px);
+    font-weight: 850;
+    letter-spacing: -.05em;
+    line-height: 1.1;
+  }
+  .right { text-align: right; }
+  #health {
+    color: var(--pink);
+    letter-spacing: .3em;
+    margin: 7px 0;
+    font-size: 22px;
+  }
+  #status { color: #b1c0d5; font-size: 12px; }
+  .veil {
+    position: fixed;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    background: #03071199;
+    backdrop-filter: blur(12px);
+    padding: 22px;
+  }
+  .hidden { display: none !important; }
+  .panel {
+    width: min(100%, 470px);
+    padding: 42px 34px;
+    text-align: center;
+    border: 1px solid #91eaff25;
+    border-radius: 28px;
+    background: linear-gradient(145deg, #14243be8, #090f1fea);
+    box-shadow: 0 30px 100px #0008, inset 0 1px #ffffff0d;
+  }
+  .badge {
+    display: inline-block;
+    color: var(--cyan);
+    border: 1px solid #66fff033;
+    background: #66fff00a;
+    border-radius: 50px;
+    padding: 8px 14px;
+    font-size: 10px;
+    letter-spacing: .2em;
+  }
+  h1 {
+    font-size: clamp(45px, 10vw, 72px);
+    line-height: .95;
+    letter-spacing: -.07em;
+    margin: 25px 0 20px;
+  }
+  h1 span { color: var(--cyan); }
+  p { color: #aebbd0; font-size: 14px; line-height: 1.8; }
+  button {
+    border: 0;
+    cursor: pointer;
+    font: inherit;
+    font-weight: 800;
+    transition: transform .15s, filter .15s;
+    touch-action: manipulation;
+  }
+  button:hover { filter: brightness(1.12); }
+  button:active { transform: scale(.96); }
+  .primary {
+    width: 100%;
+    margin-top: 18px;
+    padding: 17px;
+    border-radius: 14px;
+    background: var(--cyan);
+    color: #05201e;
+    box-shadow: 0 8px 35px #66fff022;
+  }
+  .hint { margin-top: 22px; font-size: 11px; color: #798ba6; }
+  .controls {
+    position: fixed;
+    bottom: max(22px, env(safe-area-inset-bottom));
+    right: 24px;
+    display: flex;
+    gap: 10px;
+  }
+  .controls button {
+    border: 1px solid #ffffff20;
+    background: #132036cc;
+    color: #c7d9ec;
+    border-radius: 13px;
+    padding: 13px 17px;
+    backdrop-filter: blur(8px);
+    font-size: 12px;
+  }
+  #dash.ready { border-color: #66fff088; color: var(--cyan); }
+  #best {
+    position: fixed;
+    bottom: max(25px, env(safe-area-inset-bottom));
+    left: 24px;
+    color: #8495ae;
+    font-size: 11px;
+    letter-spacing: .08em;
+  }
+</style>
+</head>
+<body>
+<canvas id="game" aria-label="Neon Drift arcade game"></canvas>
+
+<div class="hud">
+  <div>
+    <div class="eyebrow">NEON DRIFT / SCORE</div>
+    <div id="score">00000</div>
+  </div>
+  <div class="right">
+    <div class="eyebrow" id="wave">SECTOR 01</div>
+    <div id="health">♥ ♥ ♥</div>
+    <div id="status">Collect. Dodge. Survive.</div>
+  </div>
+</div>
+
+<div id="best"></div>
+<div class="controls">
+  <button id="sound" aria-label="Toggle sound">SOUND OFF</button>
+  <button id="pause" aria-label="Pause game">Ⅱ</button>
+  <button id="dash" class="ready">DASH · SPACE</button>
+</div>
+
+<div class="veil" id="overlay">
+  <div class="panel">
+    <div class="badge" id="badge">ENDLESS ARCADE SURVIVAL</div>
+    <h1 id="title">NEON<br><span>DRIFT.</span></h1>
+    <p id="description">
+      Collect the light. Outrun the darkness.<br>
+      Dash through enemies to shatter them.
+    </p>
+    <button class="primary" id="play">ENTER THE GRID →</button>
+    <div class="hint">
+      WASD / ARROWS TO MOVE · SPACE TO DASH<br>
+      TOUCH & DRAG ON MOBILE · P TO PAUSE
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  "use strict";
+
+  const $ = id => document.getElementById(id);
+  const canvas = $("game"), ctx = canvas.getContext("2d");
+  const TAU = Math.PI * 2;
+  const rand = (a, b) => a + Math.random() * (b - a);
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+  let W, H, dpr, state = "menu", last = performance.now();
+  let player, enemies = [], gems = [], particles = [], rings = [];
+  let time = 0, score = 0, spawn = 0, gemClock = 0;
+  let shake = 0, combo = 0, comboTime = 0, best = 0;
+  let sound = false, audio;
+  const keys = new Set();
+  const pointer = { active: false, x: 0, y: 0 };
+
+  try { best = Number(localStorage.getItem("neon-drift-best")) || 0; }
+  catch (_) {}
+  $("best").textContent = `PERSONAL BEST ${best.toLocaleString()}`;
+
+  function resize() {
+    W = innerWidth; H = innerHeight;
+    dpr = Math.min(devicePixelRatio || 1, 2);
+    canvas.width = Math.round(W * dpr);
+    canvas.height = Math.round(H * dpr);
+    if (player) {
+      player.x = clamp(player.x, 18, W - 18);
+      player.y = clamp(player.y, 18, H - 18);
+    }
+  }
+  addEventListener("resize", resize);
+  resize();
+
+  function tone(freq, duration = .08, type = "sine", volume = .035) {
+    if (!sound) return;
+    try {
+      audio ||= new (window.AudioContext || window.webkitAudioContext)();
+      audio.resume();
+      const o = audio.createOscillator(), g = audio.createGain();
+      o.type = type;
+      o.frequency.setValueAtTime(freq, audio.currentTime);
+      o.frequency.exponentialRampToValueAtTime(
+        Math.max(40, freq * .45), audio.currentTime + duration
+      );
+      g.gain.setValueAtTime(volume, audio.currentTime);
+      g.gain.exponentialRampToValueAtTime(.001, audio.currentTime + duration);
+      o.connect(g); g.connect(audio.destination);
+      o.start(); o.stop(audio.currentTime + duration);
+    } catch (_) {}
+  }
+
+  function burst(x, y, color, count = 20) {
+    for (let i = 0; i < count; i++) {
+      const angle = rand(0, TAU), speed = rand(40, 240);
+      particles.push({
+        x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+        life: rand(.25, .7), max: .7, color, size: rand(1.5, 4)
+      });
+    }
+  }
+
+  function addGem() {
+    const margin = Math.min(65, W * .15, H * .15);
+    gems.push({
+      x: rand(margin, W - margin),
+      y: rand(margin, H - margin),
+      phase: rand(0, TAU)
+    });
+  }
+
+  function start() {
+    player = {
+      x: W / 2, y: H / 2, r: 11, hp: 3,
+      dx: 0, dy: -1, dash: 0, cooldown: 0, invincible: 1.5
+    };
+    enemies = []; gems = []; particles = []; rings = [];
+    time = score = spawn = gemClock = shake = combo = comboTime = 0;
+    keys.clear(); pointer.active = false;
+    for (let i = 0; i < 6; i++) addGem();
+    state = "playing";
+    $("overlay").classList.add("hidden");
+    $("pause").textContent = "Ⅱ";
+    updateHUD();
+  }
+
+  function updateHUD() {
+    $("score").textContent = String(Math.floor(score)).padStart(5, "0");
+    $("health").textContent =
+      "♥ ".repeat(player.hp) + "♡ ".repeat(3 - player.hp);
+    $("wave").textContent =
+      "SECTOR " + String(1 + Math.floor(time / 20)).padStart(2, "0");
+    $("status").textContent = combo > 1
+      ? `${combo}× CRYSTAL COMBO` : "Collect. Dodge. Survive.";
+    $("dash").classList.toggle("ready", player.cooldown <= 0);
+    $("dash").textContent = player.cooldown > 0
+      ? `DASH · ${player.cooldown.toFixed(1)}s` : "DASH · SPACE";
+  }
+
+  function dash() {
+    if (state !== "playing" || player.cooldown > 0) return;
+    player.dash = .2;
+    player.cooldown = 2.5;
+    rings.push({ x: player.x, y: player.y, r: 12, life: .4 });
+    tone(220, .18, "sawtooth", .025);
+  }
+
+  function finish() {
+    state = "over";
+    burst(player.x, player.y, "#ffffff", 50);
+    tone(110, .5, "sawtooth");
+    const result = Math.floor(score);
+    if (result > best) {
+      best = result;
+      try { localStorage.setItem("neon-drift-best", best); } catch (_) {}
+    }
+    $("best").textContent = `PERSONAL BEST ${best.toLocaleString()}`;
+    $("badge").textContent = "SIGNAL LOST";
+    $("title").innerHTML = "NICE<br><span>DRIFT.</span>";
+    $("description").textContent =
+      `${result.toLocaleString()} points · ${Math.floor(time)} seconds survived`;
+    $("play").textContent = "TRY AGAIN →";
+    $("overlay").classList.remove("hidden");
+  }
+
+  function togglePause() {
+    if (state !== "playing" && state !== "paused") return;
+    state = state === "playing" ? "paused" : "playing";
+    keys.clear(); pointer.active = false;
+    $("pause").textContent = state === "paused" ? "▶" : "Ⅱ";
+  }
+
+  $("play").onclick = start;
+  $("dash").onclick = dash;
+  $("pause").onclick = togglePause;
+  $("sound").onclick = () => {
+    sound = !sound;
+    $("sound").textContent = sound ? "SOUND ON" : "SOUND OFF";
+    if (sound) tone(660);
+  };
+
+  addEventListener("keydown", e => {
+    const k = e.key.toLowerCase();
+    if (["arrowup","arrowdown","arrowleft","arrowright"," "].includes(k))
+      e.preventDefault();
+    keys.add(k);
+    if (e.repeat) return;
+    if (k === " ") dash();
+    if (k === "p" || k === "escape") togglePause();
+  });
+  addEventListener("keyup", e => keys.delete(e.key.toLowerCase()));
+  addEventListener("blur", () => {
+    keys.clear();
+    if (state === "playing") togglePause();
+  });
+  canvas.addEventListener("pointerdown", e => {
+    if (state !== "playing") return;
+    pointer.active = true;
+    pointer.x = e.clientX; pointer.y = e.clientY;
+    canvas.setPointerCapture(e.pointerId);
+  });
+  canvas.addEventListener("pointermove", e => {
+    if (pointer.active) {
+      pointer.x = e.clientX; pointer.y = e.clientY;
+    }
+  });
+  const release = () => { pointer.active = false; };
+  canvas.addEventListener("pointerup", release);
+  canvas.addEventListener("pointercancel", release);
+
+  function spawnEnemy() {
+    const edge = Math.floor(rand(0, 4));
+    const x = edge === 0 ? -25 : edge === 1 ? W + 25 : rand(0, W);
+    const y = edge === 2 ? -25 : edge === 3 ? H + 25 : rand(0, H);
+    const heavy = Math.random() < .2;
+    enemies.push({
+      x, y, r: heavy ? 17 : 11,
+      speed: (heavy ? 48 : 76) + Math.min(time * .8, 100),
+      angle: rand(0, TAU), heavy
+    });
+  }
+
+  function update(dt) {
+    time += dt;
+    score += dt * 4;
+    comboTime -= dt;
+    if (comboTime <= 0) combo = 0;
+    player.cooldown = Math.max(0, player.cooldown - dt);
+    player.dash = Math.max(0, player.dash - dt);
+    player.invincible = Math.max(0, player.invincible - dt);
+
+    let mx = Number(keys.has("d") || keys.has("arrowright")) -
+             Number(keys.has("a") || keys.has("arrowleft"));
+    let my = Number(keys.has("s") || keys.has("arrowdown")) -
+             Number(keys.has("w") || keys.has("arrowup"));
+
+    if (pointer.active) {
+      const dx = pointer.x - player.x, dy = pointer.y - player.y;
+      const distance = Math.hypot(dx, dy);
+      if (distance > 5) {
+        mx = dx / distance; my = dy / distance;
+        const slow = Math.min(1, distance / 40);
+        mx *= slow; my *= slow;
+      } else { mx = 0; my = 0; }
+    }
+    const length = Math.hypot(mx, my);
+    if (length > 1) { mx /= length; my /= length; }
+    if (length > .05 && player.dash <= 0) {
+      const n = Math.hypot(mx, my);
+      player.dx = mx / n; player.dy = my / n;
+    }
+    const dashing = player.dash > 0;
+    player.x += (dashing ? player.dx * 880 : mx * 270) * dt;
+    player.y += (dashing ? player.dy * 880 : my * 270) * dt;
+    player.x = clamp(player.x, 16, W - 16);
+    player.y = clamp(player.y, 16, H - 16);
+
+    if (dashing) {
+      burst(player.x, player.y, "#66fff0", 2);
+    }
+
+    spawn -= dt;
+    if (spawn <= 0) {
+      spawnEnemy();
+      spawn = Math.max(.22, 1.1 - time * .009);
+    }
+    gemClock += dt;
+    if (gemClock > 1.1 && gems.length < 10) {
+      addGem(); gemClock = 0;
+    }
+
+    for (let i = gems.length - 1; i >= 0; i--) {
+      const g = gems[i];
+      const distance = Math.hypot(g.x - player.x, g.y - player.y);
+      if (distance < 85) {
+        g.x += (player.x - g.x) * dt * 6;
+        g.y += (player.y - g.y) * dt * 6;
+      }
+      if (distance < 22) {
+        combo = Math.min(combo + 1, 8); comboTime = 3;
+        score += 50 * combo;
+        burst(g.x, g.y, "#66fff0", 15);
+        tone(450 + combo * 90, .09);
+        gems.splice(i, 1);
+      }
+    }
+
+    for (let i = enemies.length - 1; i >= 0; i--) {
+      const e = enemies[i];
+      const angle = Math.atan2(player.y - e.y, player.x - e.x);
+      e.x += Math.cos(angle) * e.speed * dt;
+      e.y += Math.sin(angle) * e.speed * dt;
+      e.angle += dt * 1.5;
+      if (Math.hypot(e.x - player.x, e.y - player.y) < e.r + player.r) {
+        if (dashing) {
+          burst(e.x, e.y, "#ff507c", 24);
+          enemies.splice(i, 1);
+          score += 100; shake = 5;
+          tone(140, .1, "triangle");
+        } else if (player.invincible <= 0) {
+          player.hp--;
+          player.invincible = 1.6;
+          combo = 0; shake = 14;
+          burst(player.x, player.y, "#ff507c", 30);
+          enemies.splice(i, 1);
+          tone(90, .25, "sawtooth");
+          if (player.hp <= 0) { finish(); break; }
+        }
+      }
+    }
+    updateHUD();
+  }
+
+  function polygon(x, y, radius, sides, rotation, color) {
+    ctx.beginPath();
+    for (let i = 0; i < sides; i++) {
+      const a = rotation + i * TAU / sides;
+      const px = x + Math.cos(a) * radius;
+      const py = y + Math.sin(a) * radius;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fillStyle = color + "20";
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.shadowColor = color; ctx.shadowBlur = 17;
+    ctx.fill(); ctx.stroke();
+    ctx.shadowBlur = 0;
+  }
+
+  function render(dt, now) {
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = "#080e1b";
+    ctx.fillRect(0, 0, W, H);
+
+    const glow = ctx.createRadialGradient(
+      W * .5, H * .45, 0, W * .5, H * .45, Math.max(W, H) * .7
+    );
+    glow.addColorStop(0, "#14243a");
+    glow.addColorStop(1, "#060a14");
+    ctx.fillStyle = glow; ctx.fillRect(0, 0, W, H);
+
+    ctx.strokeStyle = "#7ca4ce0c"; ctx.lineWidth = 1;
+    const offset = (now * .008) % 50;
+    ctx.beginPath();
+    for (let x = 0; x < W; x += 50) {
+      ctx.moveTo(x, 0); ctx.lineTo(x, H);
+    }
+    for (let y = offset; y < H; y += 50) {
+      ctx.moveTo(0, y); ctx.lineTo(W, y);
+    }
+    ctx.stroke();
+
+    ctx.save();
+    if (shake > .1) {
+      ctx.translate(rand(-shake, shake), rand(-shake, shake));
+      shake *= Math.exp(-dt * 14);
+    }
+
+    for (const g of gems) {
+      const pulse = Math.sin(now * .004 + g.phase);
+      polygon(g.x, g.y, 7 + pulse, 4, Math.PI / 4, "#66fff0");
+    }
+    for (const e of enemies)
+      polygon(e.x, e.y, e.r, e.heavy ? 6 : 3, e.angle, "#ff507c");
+
+    if (player && state !== "over") {
+      const visible = player.invincible <= 0 ||
+        Math.floor(now / 80) % 2 === 0;
+      if (visible) {
+        const color = player.dash > 0 ? "#ffffff" : "#66fff0";
+        ctx.save();
+        ctx.translate(player.x, player.y);
+        ctx.rotate(Math.atan2(player.dy, player.dx) + Math.PI / 2);
+        ctx.shadowColor = color; ctx.shadowBlur = 25;
+        ctx.beginPath();
+        ctx.moveTo(0, -16); ctx.lineTo(11, 12);
+        ctx.lineTo(0, 7); ctx.lineTo(-11, 12); ctx.closePath();
+        ctx.fillStyle = color; ctx.fill();
+        ctx.restore();
+      }
+      if (player.cooldown <= 0) {
+        ctx.beginPath();
+        ctx.arc(player.x, player.y, 23, 0, TAU);
+        ctx.strokeStyle = "#66fff035"; ctx.stroke();
+      }
+    }
+
+    const effectsDt = state === "paused" ? 0 : dt;
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.life -= effectsDt;
+      if (p.life <= 0) { particles.splice(i, 1); continue; }
+      p.x += p.vx * effectsDt; p.y += p.vy * effectsDt;
+      p.vx *= Math.exp(-effectsDt * 3);
+      p.vy *= Math.exp(-effectsDt * 3);
+      ctx.globalAlpha = Math.min(1, p.life / .3);
+      ctx.fillStyle = p.color;
+      ctx.fillRect(p.x, p.y, p.size, p.size);
+    }
+    ctx.globalAlpha = 1;
+
+    for (let i = rings.length - 1; i >= 0; i--) {
+      const r = rings[i];
+      r.life -= effectsDt; r.r += effectsDt * 180;
+      if (r.life <= 0) { rings.splice(i, 1); continue; }
+      ctx.beginPath(); ctx.arc(r.x, r.y, r.r, 0, TAU);
+      ctx.strokeStyle = `rgba(102,255,240,${r.life * 2})`;
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    if (state === "paused") {
+      ctx.fillStyle = "#060a14b8"; ctx.fillRect(0, 0, W, H);
+      ctx.textAlign = "center";
+      ctx.fillStyle = "#66fff0";
+      ctx.font = "800 36px system-ui";
+      ctx.fillText("PAUSED", W / 2, H / 2);
+      ctx.fillStyle = "#aebbd0";
+      ctx.font = "14px system-ui";
+      ctx.fillText("Press P or tap ▶ to resume", W / 2, H / 2 + 34);
+    }
+  }
+
+  function frame(now) {
+    const dt = Math.min((now - last) / 1000, .033);
+    last = now;
+    if (state === "playing") update(dt);
+    render(dt, now);
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html
